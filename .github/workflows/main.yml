@@ -153,7 +153,7 @@ jobs:
       - name: Copy app package to container
         run: |
           docker cp ${{ steps.pkg.outputs.filename }} splunk:/tmp/app.tar.gz
-          docker exec splunk chmod 644 /tmp/app.tar.gz
+          docker exec -u root splunk chmod 644 /tmp/app.tar.gz
 
       - name: Install app
         run: |
