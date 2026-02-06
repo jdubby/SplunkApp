@@ -139,7 +139,7 @@ jobs:
         run: |
           echo "Waiting for Splunk to start..."
           for i in $(seq 1 90); do
-            if docker exec -u ansible splunk bash -c '/opt/splunk/bin/splunk status' 2>/dev/null | grep -q "running"; then
+            if docker exec -u splunk splunk bash -c '/opt/splunk/bin/splunk status' 2>/dev/null | grep -q "running"; then
               echo "Splunk is running after attempt $i"
               exit 0
             fi
@@ -157,15 +157,15 @@ jobs:
 
       - name: Install app
         run: |
-          docker exec -u ansible splunk bash -c \
+          docker exec -u splunk splunk bash -c \
             '/opt/splunk/bin/splunk install app /tmp/app.tar.gz -auth admin:Chang3d!'
 
       - name: Restart Splunk
         run: |
-          docker exec -u ansible splunk bash -c '/opt/splunk/bin/splunk restart'
+          docker exec -u splunk splunk bash -c '/opt/splunk/bin/splunk restart'
           echo "Waiting for Splunk to restart..."
           for i in $(seq 1 60); do
-            if docker exec -u ansible splunk bash -c '/opt/splunk/bin/splunk status' 2>/dev/null | grep -q "running"; then
+            if docker exec -u splunk splunk bash -c '/opt/splunk/bin/splunk status' 2>/dev/null | grep -q "running"; then
               echo "Splunk restarted successfully"
               break
             fi
@@ -174,13 +174,13 @@ jobs:
 
       - name: Verify app is installed
         run: |
-          docker exec -u ansible splunk bash -c \
+          docker exec -u splunk splunk bash -c \
             '/opt/splunk/bin/splunk display app -auth admin:Chang3d!' | grep -q "delphix_dashboards"
           echo "App 'delphix_dashboards' is installed and visible"
 
       - name: Check for btool errors
         run: |
-          ERRORS=$(docker exec -u ansible splunk bash -c \
+          ERRORS=$(docker exec -u splunk splunk bash -c \
             '/opt/splunk/bin/splunk btool check --app=delphix_dashboards' 2>&1 || true)
           if [ -n "$ERRORS" ]; then
             echo "::warning::btool reported issues:"
