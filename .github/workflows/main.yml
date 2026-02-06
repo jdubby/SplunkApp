@@ -113,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        splunk_version: ['9.1.0', '9.2.0', '9.3.0']
+        splunk_version: ['9.2', '9.3', '9.4']
     env:
       SPLUNK_BIN: /opt/splunk/bin/splunk
     steps:
