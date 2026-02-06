@@ -139,8 +139,10 @@ jobs:
         run: |
           echo "Waiting for Splunk to start..."
           for i in $(seq 1 90); do
-            if docker exec -u splunk splunk bash -c '/opt/splunk/bin/splunk status' 2>/dev/null | grep -q "running"; then
-              echo "Splunk is running after attempt $i"
+            # Poll the REST API from the host — avoids user/permission issues inside the container
+            if curl -ks https://localhost:8089/services/server/health/splunkd/details \
+                 -u admin:Chang3d! 2>/dev/null | grep -q "splunkd"; then
+              echo "Splunk is ready after attempt $i"
               exit 0
             fi
             echo "Attempt $i/90 - waiting..."
@@ -155,18 +157,24 @@ jobs:
           docker cp ${{ steps.pkg.outputs.filename }} splunk:/tmp/app.tar.gz
           docker exec -u root splunk chmod 644 /tmp/app.tar.gz
 
-      - name: Install app
+      - name: Install app via REST API
         run: |
-          docker exec -u splunk splunk bash -c \
-            '/opt/splunk/bin/splunk install app /tmp/app.tar.gz -auth admin:Chang3d!'
+          curl -ks -u admin:Chang3d! \
+            https://localhost:8089/services/apps/local \
+            -d name=/tmp/app.tar.gz \
+            -d filename=true \
+            -d update=true
 
-      - name: Restart Splunk
+      - name: Restart Splunk and wait
         run: |
-          docker exec -u splunk splunk bash -c '/opt/splunk/bin/splunk restart'
+          curl -ks -u admin:Chang3d! \
+            -X POST https://localhost:8089/services/server/control/restart
           echo "Waiting for Splunk to restart..."
+          sleep 10
           for i in $(seq 1 60); do
-            if docker exec -u splunk splunk bash -c '/opt/splunk/bin/splunk status' 2>/dev/null | grep -q "running"; then
-              echo "Splunk restarted successfully"
+            if curl -ks https://localhost:8089/services/server/health/splunkd/details \
+                 -u admin:Chang3d! 2>/dev/null | grep -q "splunkd"; then
+              echo "Splunk restarted successfully after attempt $i"
               break
             fi
             sleep 5
@@ -174,9 +182,15 @@ jobs:
 
       - name: Verify app is installed
         run: |
-          docker exec -u splunk splunk bash -c \
-            '/opt/splunk/bin/splunk display app -auth admin:Chang3d!' | grep -q "delphix_dashboards"
-          echo "App 'delphix_dashboards' is installed and visible"
+          RESPONSE=$(curl -ks -u admin:Chang3d! \
+            https://localhost:8089/services/apps/local/delphix_dashboards)
+          if echo "$RESPONSE" | grep -q "delphix_dashboards"; then
+            echo "App 'delphix_dashboards' is installed and visible"
+          else
+            echo "::error::App not found in installed apps"
+            echo "$RESPONSE"
+            exit 1
+          fi
 
       - name: Check for btool errors
         run: |
