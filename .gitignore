@@ -4,6 +4,7 @@ metadata/local.meta
 
 # Backup files
 *.bkp
+.backup/
 
 # Build artifacts
 build/

@@ -1,4 +1,4 @@
-<form theme="dark">
+<form version="1.1" theme="dark">
   <label>Delphix Alert Details</label>
   <fieldset submitButton="false">
     <input type="time" token="time1" searchWhenChanged="true">
