@@ -113,7 +113,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        splunk_version: ['9.1', '9.2', '9.3']
+        splunk_version: ['9.1.0', '9.2.0', '9.3.0']
+    env:
+      SPLUNK_BIN: /opt/splunk/bin/splunk
     steps:
       - name: Download app package
         uses: actions/download-artifact@v4
@@ -135,39 +137,51 @@ jobs:
             splunk/splunk:${{ matrix.splunk_version }}
 
       - name: Wait for Splunk to be ready
+        timeout-minutes: 5
         run: |
           echo "Waiting for Splunk to start..."
-          for i in $(seq 1 60); do
-            if docker exec splunk splunk status 2>/dev/null | grep -q "running"; then
-              echo "Splunk is running"
-              break
+          for i in $(seq 1 90); do
+            # Check if the container's Ansible-based setup is done
+            if docker exec splunk bash -c '$SPLUNK_HOME/bin/splunk status' 2>/dev/null | grep -q "running"; then
+              echo "Splunk is running after attempt $i"
+              exit 0
             fi
-            echo "Attempt $i/60 - waiting..."
+            echo "Attempt $i/90 - waiting..."
             sleep 5
           done
+          echo "::error::Splunk did not start within the timeout"
+          docker logs splunk
+          exit 1
 
       - name: Copy app package to container
         run: docker cp ${{ steps.pkg.outputs.filename }} splunk:/tmp/app.tar.gz
 
       - name: Install app
         run: |
-          docker exec splunk splunk install app /tmp/app.tar.gz \
+          docker exec splunk $SPLUNK_BIN install app /tmp/app.tar.gz \
             -auth admin:Chang3d!
 
       - name: Restart Splunk
         run: |
-          docker exec splunk splunk restart
-          sleep 30
+          docker exec splunk $SPLUNK_BIN restart
+          echo "Waiting for Splunk to restart..."
+          for i in $(seq 1 60); do
+            if docker exec splunk bash -c '$SPLUNK_HOME/bin/splunk status' 2>/dev/null | grep -q "running"; then
+              echo "Splunk restarted successfully"
+              break
+            fi
+            sleep 5
+          done
 
       - name: Verify app is installed
         run: |
-          docker exec splunk splunk display app \
+          docker exec splunk $SPLUNK_BIN display app \
             -auth admin:Chang3d! | grep -q "delphix_dashboards"
           echo "App 'delphix_dashboards' is installed and visible"
 
       - name: Check for btool errors
         run: |
-          ERRORS=$(docker exec splunk splunk btool check --app=delphix_dashboards 2>&1 || true)
+          ERRORS=$(docker exec splunk $SPLUNK_BIN btool check --app=delphix_dashboards 2>&1 || true)
           if [ -n "$ERRORS" ]; then
             echo "::warning::btool reported issues:"
             echo "$ERRORS"
