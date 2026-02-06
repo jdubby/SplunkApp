@@ -1,0 +1,217 @@
+name: CI/CD for Delphix Dashboards
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Package the Splunk app
+  # ──────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install Splunk Packaging Toolkit
+        run: pip install splunk-packaging-toolkit
+
+      - name: Package the app
+        run: |
+          mkdir -p build
+          slim package delphix_dashboards/ -o build/
+
+      - name: Upload app package
+        uses: actions/upload-artifact@v4
+        with:
+          name: splunk-app-package
+          path: build/delphix_dashboards-*.tar.gz
+
+  # ──────────────────────────────────────────────
+  # Job 2: AppInspect CLI validation
+  # ──────────────────────────────────────────────
+  appinspect-cli:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download app package
+        uses: actions/download-artifact@v4
+        with:
+          name: splunk-app-package
+          path: build/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install AppInspect CLI
+        run: pip install splunk-appinspect
+
+      - name: Run AppInspect CLI
+        run: |
+          splunk-appinspect inspect build/delphix_dashboards-*.tar.gz \
+            --mode precert \
+            --included-tags splunk_appinspect \
+            --output-file appinspect-cli-report.json \
+            --data-format junitxml
+
+      - name: Upload CLI report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appinspect-cli-report
+          path: appinspect-cli-report.json
+
+  # ──────────────────────────────────────────────
+  # Job 3: AppInspect API validation (Splunkbase/Cloud)
+  # ──────────────────────────────────────────────
+  appinspect-api:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download app package
+        uses: actions/download-artifact@v4
+        with:
+          name: splunk-app-package
+          path: build/
+
+      - name: Run AppInspect API
+        uses: splunk/appinspect-api-action@v3.0
+        with:
+          username: ${{ secrets.SPL_COM_USER }}
+          password: ${{ secrets.SPL_COM_PASSWORD }}
+          app_path: build/
+          included_tags: cloud,self-service
+
+      - name: Upload API report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appinspect-api-report
+          path: AppInspect_response.html
+
+  # ──────────────────────────────────────────────
+  # Job 4: Docker-based installation testing
+  # ──────────────────────────────────────────────
+  test-install:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        splunk_version: ['9.1', '9.2', '9.3']
+    steps:
+      - name: Download app package
+        uses: actions/download-artifact@v4
+        with:
+          name: splunk-app-package
+          path: build/
+
+      - name: Get package filename
+        id: pkg
+        run: echo "filename=$(ls build/delphix_dashboards-*.tar.gz)" >> "$GITHUB_OUTPUT"
+
+      - name: Start Splunk Enterprise container
+        run: |
+          docker run -d \
+            --name splunk \
+            -p 8089:8089 \
+            -e SPLUNK_START_ARGS='--accept-license' \
+            -e SPLUNK_PASSWORD='Chang3d!' \
+            splunk/splunk:${{ matrix.splunk_version }}
+
+      - name: Wait for Splunk to be ready
+        run: |
+          echo "Waiting for Splunk to start..."
+          for i in $(seq 1 60); do
+            if docker exec splunk splunk status 2>/dev/null | grep -q "running"; then
+              echo "Splunk is running"
+              break
+            fi
+            echo "Attempt $i/60 - waiting..."
+            sleep 5
+          done
+
+      - name: Copy app package to container
+        run: docker cp ${{ steps.pkg.outputs.filename }} splunk:/tmp/app.tar.gz
+
+      - name: Install app
+        run: |
+          docker exec splunk splunk install app /tmp/app.tar.gz \
+            -auth admin:Chang3d!
+
+      - name: Restart Splunk
+        run: |
+          docker exec splunk splunk restart
+          sleep 30
+
+      - name: Verify app is installed
+        run: |
+          docker exec splunk splunk display app \
+            -auth admin:Chang3d! | grep -q "delphix_dashboards"
+          echo "App 'delphix_dashboards' is installed and visible"
+
+      - name: Check for btool errors
+        run: |
+          ERRORS=$(docker exec splunk splunk btool check --app=delphix_dashboards 2>&1 || true)
+          if [ -n "$ERRORS" ]; then
+            echo "::warning::btool reported issues:"
+            echo "$ERRORS"
+          else
+            echo "No btool errors found"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f splunk || true
+
+  # ──────────────────────────────────────────────
+  # Job 5: Create GitHub Release on version tags
+  # ──────────────────────────────────────────────
+  release:
+    needs: [appinspect-cli, appinspect-api, test-install]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download app package
+        uses: actions/download-artifact@v4
+        with:
+          name: splunk-app-package
+          path: release/
+
+      - name: Download AppInspect CLI report
+        uses: actions/download-artifact@v4
+        with:
+          name: appinspect-cli-report
+          path: release/
+
+      - name: Download AppInspect API report
+        uses: actions/download-artifact@v4
+        with:
+          name: appinspect-api-report
+          path: release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/delphix_dashboards-*.tar.gz
+            release/appinspect-cli-report.json
+            release/AppInspect_response.html

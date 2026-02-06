@@ -1,0 +1,5 @@
+# AppInspect API expected failures
+# Add entries here for checks that are known/accepted failures.
+# Format:
+#   check_name:
+#     comment: JIRA-123 or reason for exception

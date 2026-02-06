@@ -1,0 +1,25 @@
+# Splunk runtime files
+local/
+metadata/local.meta
+
+# Backup files
+*.bkp
+
+# Build artifacts
+build/
+*.tar.gz
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
