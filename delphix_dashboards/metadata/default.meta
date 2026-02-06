@@ -113,7 +113,7 @@ version = 8.0.3
 modtime = 1586271022.986236000
 
 []
-access = read : [ * ], write : [ admin, delphix, power ]
+access = read : [ * ], write : [ admin, sc_admin, delphix, power ]
 export = none
 version = 7.2.1
 modtime = 1542064942.086170000
@@ -187,7 +187,7 @@ version = 8.0.3
 modtime = 1587670312.513545000
 
 [macros/delphix_events_index]
-access = read : [ * ], write : [ admin, can_delete, power ]
+access = read : [ * ], write : [ admin, sc_admin, can_delete, power ]
 export = none
 owner = nobody
 version = 7.3.4.2
