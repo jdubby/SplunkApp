@@ -32,8 +32,7 @@
 2. Browse to the Delphix Dashboards app package. It will be named delphix_dashboards-&lt;version>.tar.gz
 3. Only select Upgrade app if there is already an older version of the app installed.
 4. Click Upload
-5. 
-6. The Delphix Dashboards App will now be available on the Apps Menu
+5. The Delphix Dashboards App will now be available on the Apps Menu
 
 
 ### Configure the Splunk HEC Token
